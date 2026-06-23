@@ -72,14 +72,14 @@ const DietLogSchema = new mongoose.Schema({
 
 
 // Auto-calculate dailyTotals on every save
-DietLogSchema.pre('save', function(next) {
+DietLogSchema.pre('save', function() {
   const allFoods = [
-    ...this.meals.breakfast,
-    ...this.meals.lunch,
-    ...this.meals.snacks,
-    ...this.meals.dinner,
-    ...this.meals.pre_workout,
-    ...this.meals.post_workout
+    ...(this.meals.breakfast || []),
+    ...(this.meals.lunch || []),
+    ...(this.meals.snacks || []),
+    ...(this.meals.dinner || []),
+    ...(this.meals.pre_workout || []),
+    ...(this.meals.post_workout || [])
   ];
 
   this.dailyTotals = allFoods.reduce((totals, food) => ({
@@ -89,8 +89,6 @@ DietLogSchema.pre('save', function(next) {
     fatG:     totals.fatG     + (food.fatG       || 0),
     fiberG:   totals.fiberG   + (food.fiberG     || 0)
   }), { calories: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 });
-
-  next();
 });
 
 DietLogSchema.index({ user: 1, date: -1 });
