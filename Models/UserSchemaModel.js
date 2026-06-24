@@ -64,6 +64,22 @@ const UserSchema = new mongoose.Schema({
     fatGrams: { type: Number, default: 0 },
   },
 
+  dietary_preference: { type: String, default: '' },
+
+  mealPlan: {
+    breakfast: { type: mongoose.Schema.Types.Mixed, default: [] },
+    lunch:     { type: mongoose.Schema.Types.Mixed, default: [] },
+    dinner:    { type: mongoose.Schema.Types.Mixed, default: [] },
+    snacks:    { type: mongoose.Schema.Types.Mixed, default: [] },
+    totals: {
+      calories: { type: Number, default: 0 },
+      protein:  { type: Number, default: 0 },
+      carbs:    { type: Number, default: 0 },
+      fat:      { type: Number, default: 0 },
+    },
+    generatedAt: { type: Date, default: null },
+  },
+
   daily_water_goal_ml: { type: Number, default: 2000 },
 
   preferences: {

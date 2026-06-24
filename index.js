@@ -10,6 +10,9 @@ import cors from  'cors';
 import analyzeFoodNutrition from './Api/CaptureImage.js';
 import fs from 'fs'; 
 import multer from 'multer';
+import foodRecommendationRouter, { buildAndSaveMealPlan } from './Api/FoodRecommendation.js';
+import workoutRoutes from './Api/WorkoutRoutes.js';
+import exerciseRoutes from './Api/ExerciseData.js';
 
 import firebaseAdmin from 'firebase-admin';
 import { createRequire } from 'module';
@@ -37,6 +40,10 @@ app.use(cors({
 
 // Mount the CaptureImage routes
 app.use('/', analyzeFoodNutrition);
+app.use('/food-recommendation', foodRecommendationRouter);
+app.use('/WorkoutTemplates', workoutRoutes);
+app.use('/Exercise', exerciseRoutes);
+
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -96,8 +103,7 @@ app.post('/login', async (req, res) => {
 const remainingCalories = calories - ((protein * 4) + (fats * 9));
 carbs = Math.round(remainingCalories / 4);
 
-
-if(carbs<0) carbs = 50;
+if(carbs < 0) carbs = 50;
 
 onboardingData.personalPlan = {
       dailyCalories: calories,
@@ -126,13 +132,18 @@ onboardingData.personalPlan = {
       }
     );
 
-
     res.status(200).json({ 
       message: "User synced successfully!", 
       user 
     });
 
-    console.log("success")
+    console.log("success");
+
+    // Build meal plan in background after response is sent (non-blocking)
+    buildAndSaveMealPlan(user).catch(err =>
+      console.error('[MealPlan] Background generation failed:', err.message)
+    );
+
   } catch (error) {
     console.error("Login route error:", error);
     res.status(500).json({ error: error.message });
@@ -167,102 +178,6 @@ if (!user) {
 });
 
 
-
-// to capture the image and send it to ai model ./api/captureimage.js
-
-// POST /CapturedImage
-// Body (multipart/form-data):
-//   mealImage  — file
-//   userId     — string (ObjectId)
-//   mealType   — "breakfast" | "lunch" | "dinner" | "snacks" | "pre_workout" | "post_workout"
-
-// app.post('/CapturedImage', upload.single('mealImage'), async (req, res) => {
-//   try {
-//     if (!req.file) {
-//       return res.status(400).json({ message: "No image uploaded" });
-//     }
-
-//     const { firebaseUid , mealType } = req.body;
-
-//     // ── Validate inputs ──────────────────────────────────────────────
-//     if (!firebaseUid) {
-//       return res.status(400).json({ message: "userId is required" });
-//     }
-
-//     const VALID_MEALS = ['breakfast', 'lunch', 'dinner', 'snacks', 'pre_workout', 'post_workout'];
-//     if (!VALID_MEALS.includes(mealType)) {
-//       return res.status(400).json({ message: `mealType must be one of: ${VALID_MEALS.join(', ')}` });
-//     }
-
-//     // ── AI analysis ──────────────────────────────────────────────────
-//     const aiResult = await analyzeFoodNutrition(req.file.path);
-
-//     // ── Map AI result → FoodItemSchema ───────────────────────────────
-//     // Assumes analyzeFoodNutrition returns this shape:
-//     // {
-//     //   foodName: "Butter Chicken",
-//     //   quantity: 200,
-//     //   unit: "grams",
-//     //   calories: 290, protein: 22.4, carbs: 8.6, fat: 19.2,
-//     //   fiber: 1.2, sugar: 5.4, sodium: 520
-//     // }
-//     const foodEntry = {
-//       foodName:   aiResult.foodName,
-//       quantity:   aiResult.quantity   ?? 100,
-//       unit:       aiResult.unit       ?? 'grams',
-//       calories:   aiResult.calories   ?? 0,
-//       proteinG:   aiResult.protein    ?? 0,
-//       carbsG:     aiResult.carbs      ?? 0,
-//       fatG:       aiResult.fat        ?? 0,
-//       fiberG:     aiResult.fiber      ?? 0,
-//       sugarG:     aiResult.sugar      ?? 0,
-//       sodiumMg:   aiResult.sodium     ?? 0,
-//       source:     'ai_photo',
-//       imageUrl:   req.file.path,       // or your cloud URL if you upload to S3/Cloudinary
-//       isVerified: false,
-//       loggedAt:   new Date().toTimeString().slice(0, 5)
-//     };
-
-//     // ── Upsert today's DietLog, push into correct meal ───────────────
-//     const today = new Date();
-//     today.setHours(0, 0, 0, 0); // normalize to midnight
-
-//     // findOneAndUpdate with $push won't trigger pre('save') for dailyTotals,
-//     // so we use find-then-save instead
-//     let dietLog = await DietLog.findOne({firebaseUid: firebaseUid , date: today });
-
-//     if (!dietLog) {
-//       dietLog = new DietLog({
-//         user: userId,
-//         date: today,
-//         meals: {
-//           breakfast:    [],
-//           lunch:        [],
-//           dinner:       [],
-//           snacks:       [],
-//           pre_workout:  [],
-//           post_workout: []
-//         }
-//       });
-//     }
-
-//     dietLog.meals[mealType].push(foodEntry);
-//     await dietLog.save(); // triggers pre('save') → recalculates dailyTotals ✅
-
-//     res.status(200).json({
-//       message: "Food logged successfully",
-//       data: {
-//         foodEntry,
-//         dailyTotals: dietLog.dailyTotals,
-//         date: dietLog.date
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error("Processing error:", error);
-//     res.status(500).json({ error: "Failed to process image: " + error.message });
-//   }
-// });
 
 app.get('/Exercisedata', async (req, res) => {
   try {
@@ -555,6 +470,100 @@ app.post('/DietLog/water', async (req, res) => {
     return res.status(200).json({ success: true, data: dietLog });
   } catch (error) {
     console.error('Error logging water:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /DietLog/steps
+app.post('/DietLog/steps', async (req, res) => {
+  try {
+    const firebaseUid = req.headers['firebase-uid'];
+    if (!firebaseUid) {
+      return res.status(401).json({ message: 'Unauthorized: firebase-uid missing' });
+    }
+
+    const { stepsCount } = req.body;
+    if (stepsCount === undefined) {
+      return res.status(400).json({ message: 'Missing stepsCount' });
+    }
+
+    const user = await User.findOne({ firebaseUid }).select('_id');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let dietLog = await DietLog.findOne({ user: user._id, date: today });
+    if (!dietLog) {
+      dietLog = new DietLog({
+        user: user._id,
+        date: today,
+        meals: {
+          breakfast: [],
+          lunch: [],
+          snacks: [],
+          dinner: [],
+          pre_workout: [],
+          post_workout: []
+        }
+      });
+    }
+
+    dietLog.stepsCount = Number(stepsCount);
+    await dietLog.save();
+
+    return res.status(200).json({ success: true, data: dietLog });
+  } catch (error) {
+    console.error('Error logging steps:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /DietLog/steps-history
+app.get('/DietLog/steps-history', async (req, res) => {
+  try {
+    const firebaseUid = req.headers['firebase-uid'];
+    if (!firebaseUid) {
+      return res.status(401).json({ message: 'Unauthorized: firebase-uid missing' });
+    }
+
+    const user = await User.findOne({ firebaseUid }).select('_id');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 6);
+    startDate.setHours(0, 0, 0, 0);
+
+    const logs = await DietLog.find({
+      user: user._id,
+      date: { $gte: startDate }
+    }).select('date stepsCount').sort({ date: 1 });
+
+    const history = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+
+      const match = logs.find(log => {
+        const logDateStr = new Date(log.date).toISOString().split('T')[0];
+        return logDateStr === dateStr;
+      });
+
+      history.push({
+        date: dateStr,
+        dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        steps: match ? (match.stepsCount || 0) : 0
+      });
+    }
+
+    return res.status(200).json({ success: true, data: history });
+  } catch (error) {
+    console.error('Error fetching steps history:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

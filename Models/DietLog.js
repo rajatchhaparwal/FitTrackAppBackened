@@ -17,7 +17,7 @@ const FoodItemSchema = new mongoose.Schema({
   loggedAt:  { type: String, default: () => new Date().toTimeString().slice(0, 5) },
   source: {
     type: String,
-    enum: ['manual', 'barcode', 'ai_photo', 'search'],
+    enum: ['manual', 'barcode', 'ai_photo', 'search', 'local', 'fatsecret'],
     default: 'manual'
   },
   imageUrl:   { type: String, default: null }, // from NutritionLog
@@ -46,6 +46,7 @@ const DietLogSchema = new mongoose.Schema({
 
   waterIntakeMl: { type: Number, default: 0 },
   sleepHours:    { type: Number, default: null },
+  stepsCount:    { type: Number, default: 0 },
 
   // Pre-calculated — updated by pre('save') hook
   dailyTotals: {
