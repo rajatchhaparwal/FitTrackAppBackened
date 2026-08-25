@@ -17,16 +17,20 @@ import exerciseRoutes from './Api/ExerciseData.js';
 import firebaseAdmin from 'firebase-admin';
 import { createRequire } from 'module';
 
-// 1. Properly handle the JSON import for ES Modules
-const require = createRequire(import.meta.url);
-const serviceAccount = require('./firebase-service-account.json');
-
-// 2. Initialize Firebase Admin (v14 exposes cert on the default export)
-firebaseAdmin.initializeApp({
-  credential: firebaseAdmin.cert(serviceAccount)
-});
-
-console.log("Firebase Admin initialized successfully!");
+// 1. Properly handle Firebase Admin initialization
+let firebaseApp;
+try {
+  const require = createRequire(import.meta.url);
+  const serviceAccount = require('./firebase-service-account.json');
+  firebaseApp = firebaseAdmin.initializeApp({
+    credential: firebaseAdmin.cert(serviceAccount)
+  });
+  console.log("Firebase Admin initialized with service account JSON successfully!");
+} catch (error) {
+  console.warn("Could not load firebase-service-account.json, initializing Firebase Admin with Application Default Credentials...", error.message);
+  firebaseApp = firebaseAdmin.initializeApp();
+  console.log("Firebase Admin initialized successfully using Application Default Credentials!");
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
