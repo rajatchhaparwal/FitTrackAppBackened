@@ -12,7 +12,7 @@ import  AppUser  from '../Models/UserSchemaModel.js';
 const router = express.Router();
 
 // ── OpenAI setup ──────────────────────────────────────────────────────────────
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy_key_to_prevent_startup_crash' });
 
 // ── Multer setup ──────────────────────────────────────────────────────────────
 const storage = multer.diskStorage({
