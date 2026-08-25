@@ -36,7 +36,9 @@ router.get('/history', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const logs = await WorkoutLog.find({ userId: user._id })
+    const logs = await WorkoutLog.find({
+      $or: [{ userId: user._id }, { firebaseUid }]
+    })
       .sort({ date: -1 })
       .lean();
 
@@ -85,7 +87,9 @@ router.post('/log', async (req, res) => {
     user.stats = user.stats || {};
     user.stats.total_workouts = (user.stats.total_workouts || 0) + 1;
     user.stats.total_calories_burned = (user.stats.total_calories_burned || 0) + (req.body.caloriesBurned || 0);
-    user.stats.current_streak = (user.stats.current_streak || 0) + 1;
+    user.stats.total_workout_minutes = (user.stats.total_workout_minutes || 0) + (req.body.durationMins || 0);
+    user.stats.current_streak_days = (user.stats.current_streak_days || 0) + 1;
+    user.stats.last_workout_date = new Date();
     await user.save();
 
     res.json({ success: true, stats: user.stats });

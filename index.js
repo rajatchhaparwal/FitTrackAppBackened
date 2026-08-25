@@ -1,5 +1,5 @@
+import 'dotenv/config';
 import express from 'express';
-import dotenv from 'dotenv';
 import connectDB from './config/db.js'; 
 import User from './Models/UserSchemaModel.js'
 import Exercise from './Exercisedata/schemaForExercsise/exerciseSchema.js'
@@ -28,7 +28,6 @@ firebaseAdmin.initializeApp({
 
 console.log("Firebase Admin initialized successfully!");
 
-dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 app.use(express.json());
@@ -44,6 +43,9 @@ app.use('/food-recommendation', foodRecommendationRouter);
 app.use('/WorkoutTemplates', workoutRoutes);
 app.use('/Exercise', exerciseRoutes);
 
+app.get('/config/quickpose', (req, res) => {
+  res.json({ sdkKey: process.env.QUICKPOSE_SDK_KEY || '01M0CR67BVFR6ZWJ9HK7WNFPGP' });
+});
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -311,6 +313,109 @@ app.post('/UpdateProfile', async (req, res) => {
   }
 });
 
+// GET /User/weight-history
+app.get('/User/weight-history', async (req, res) => {
+  try {
+    const firebaseUid = req.headers['firebase-uid'];
+    if (!firebaseUid) {
+      return res.status(401).json({ message: 'Unauthorized: firebase-uid missing' });
+    }
+
+    const user = await User.findOne({ firebaseUid });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Auto initialize initial weight history entry if empty
+    if ((!user.weightHistory || user.weightHistory.length === 0) && user.weight) {
+      user.weightHistory = [{
+        weight: Number(user.weight),
+        date: user.createdAt || new Date(),
+        notes: 'Initial Onboarding Weight'
+      }];
+      await user.save();
+    }
+
+    // Set fallback target weight if not explicitly set
+    let targetWeight = user.targetWeight;
+    if (!targetWeight && user.weight) {
+      const g = (user.goal || '').toLowerCase();
+      if (g.includes('loss')) {
+        targetWeight = Math.round(user.weight - 5);
+      } else if (g.includes('gain') || g.includes('muscle')) {
+        targetWeight = Math.round(user.weight + 5);
+      } else {
+        targetWeight = user.weight;
+      }
+    }
+
+    const sortedHistory = (user.weightHistory || []).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    return res.status(200).json({
+      success: true,
+      currentWeight: user.weight || 0,
+      targetWeight: targetWeight || user.weight || 0,
+      height: user.height || 170,
+      goal: user.goal || 'maintenance',
+      history: sortedHistory,
+    });
+  } catch (error) {
+    console.error('Error fetching weight history:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /User/weight-log
+app.post('/User/weight-log', async (req, res) => {
+  try {
+    const firebaseUid = req.headers['firebase-uid'];
+    if (!firebaseUid) {
+      return res.status(401).json({ message: 'Unauthorized: firebase-uid missing' });
+    }
+
+    const { weight, targetWeight, notes, date } = req.body;
+    if (weight === undefined || weight === null) {
+      return res.status(400).json({ message: 'Missing weight parameter' });
+    }
+
+    const user = await User.findOne({ firebaseUid });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const newWeight = Number(weight);
+    user.weight = newWeight;
+
+    if (targetWeight !== undefined && targetWeight !== null) {
+      user.targetWeight = Number(targetWeight);
+    }
+
+    if (!user.weightHistory) {
+      user.weightHistory = [];
+    }
+
+    user.weightHistory.push({
+      weight: newWeight,
+      date: date ? new Date(date) : new Date(),
+      notes: notes || 'Weight update'
+    });
+
+    await user.save();
+
+    const sortedHistory = user.weightHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    return res.status(200).json({
+      success: true,
+      currentWeight: user.weight,
+      targetWeight: user.targetWeight || user.weight,
+      history: sortedHistory,
+    });
+  } catch (error) {
+    console.error('Error logging weight:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // POST /DietLog/food
 app.post('/DietLog/food', async (req, res) => {
   try {
@@ -521,6 +626,111 @@ app.post('/DietLog/steps', async (req, res) => {
   }
 });
 
+// GET /DietLog/calorie-history  — last 7 days intake + burn
+app.get('/DietLog/calorie-history', async (req, res) => {
+  try {
+    const firebaseUid = req.headers['firebase-uid'];
+    if (!firebaseUid) {
+      return res.status(401).json({ message: 'Unauthorized: firebase-uid missing' });
+    }
+
+    const user = await User.findOne({ firebaseUid }).select('_id personalPlan daily_calorie_goal').lean();
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 6);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Fetch diet logs for the last 7 days
+    const dietLogs = await DietLog.find({
+      user: user._id,
+      date: { $gte: startDate }
+    }).select('date dailyTotals meals').sort({ date: 1 }).lean();
+
+    // Fetch workout logs for the last 7 days
+    const workoutLogs = await WorkoutLog.find({
+      $or: [{ userId: user._id }, { firebaseUid }],
+      date: { $gte: startDate }
+    }).select('date summary.totalCaloriesBurned caloriesBurned exercises.cardio.calories durationMins workoutType title').sort({ date: 1 }).lean();
+
+    const history = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+
+      // Find matching diet log
+      const dietMatch = dietLogs.find(log => {
+        const logDateStr = new Date(log.date).toISOString().split('T')[0];
+        return logDateStr === dateStr;
+      });
+
+      // Find matching workout logs (could be multiple workouts in a day)
+      const dayWorkouts = workoutLogs.filter(log => {
+        const logDateStr = new Date(log.date).toISOString().split('T')[0];
+        return logDateStr === dateStr;
+      });
+
+      // Calculate total calories burned from all workouts that day
+      let caloriesBurned = 0;
+      const workoutDetails = [];
+      dayWorkouts.forEach(w => {
+        const burned = w.summary?.totalCaloriesBurned || w.caloriesBurned || 0;
+        caloriesBurned += burned;
+        workoutDetails.push({
+          title: w.title || w.workoutType || 'Workout',
+          type: w.workoutType,
+          caloriesBurned: burned,
+          durationMins: w.durationMins || 0,
+        });
+      });
+
+      // Build meal breakdown
+      const mealBreakdown = {};
+      if (dietMatch?.meals) {
+        for (const [mealKey, foods] of Object.entries(dietMatch.meals)) {
+          const mealCals = (foods || []).reduce((sum, f) => sum + (f.calories || 0), 0);
+          if (mealCals > 0) {
+            mealBreakdown[mealKey] = Math.round(mealCals);
+          }
+        }
+      }
+
+      history.push({
+        date: dateStr,
+        dayLabel: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        dayFull: d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+        intake: {
+          calories: Math.round(dietMatch?.dailyTotals?.calories || 0),
+          proteinG: Math.round(dietMatch?.dailyTotals?.proteinG || 0),
+          carbsG: Math.round(dietMatch?.dailyTotals?.carbsG || 0),
+          fatG: Math.round(dietMatch?.dailyTotals?.fatG || 0),
+          fiberG: Math.round(dietMatch?.dailyTotals?.fiberG || 0),
+        },
+        burned: {
+          calories: Math.round(caloriesBurned),
+          workouts: workoutDetails,
+        },
+        mealBreakdown,
+        netCalories: Math.round((dietMatch?.dailyTotals?.calories || 0) - caloriesBurned),
+      });
+    }
+
+    const calorieGoal = user.daily_calorie_goal || user.personalPlan?.dailyCalories || 2000;
+
+    return res.status(200).json({
+      success: true,
+      data: history,
+      calorieGoal,
+    });
+  } catch (error) {
+    console.error('Error fetching calorie history:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /DietLog/steps-history
 app.get('/DietLog/steps-history', async (req, res) => {
   try {
@@ -577,8 +787,8 @@ app.get('/DietLog/steps-history', async (req, res) => {
 
 const FS_TOKEN_URL  = 'https://oauth.fatsecret.com/connect/token';
 const FS_API_URL    = 'https://platform.fatsecret.com/rest/server.api';
-const FS_CLIENT_ID  = '197ebdcdca80403ebf89af543ac75dae';
-const FS_CLIENT_SECRET = 'd7c83897f7e94d9a9b41361ad760484a';
+const FS_CLIENT_ID  = process.env.FS_CLIENT_ID;
+const FS_CLIENT_SECRET = process.env.FS_CLIENT_SECRET;
 
 // ── Local Fallback Database ──────────────────────────────────────────────────
 const LOCAL_FOODS_DATABASE = [

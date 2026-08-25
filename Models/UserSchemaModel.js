@@ -16,6 +16,12 @@ const UserSchema = new mongoose.Schema({
     default: null,
   },
   bodyFatPercentage: { type: Number, default: null },
+  targetWeight: { type: Number, default: null },
+  weightHistory: [{
+    weight: { type: Number, required: true },
+    date: { type: Date, default: Date.now },
+    notes: { type: String, default: '' },
+  }],
   selectedHabits: { type: [String], default: [] },
   injuries: {
     type: [String],

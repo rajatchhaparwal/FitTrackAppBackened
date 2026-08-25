@@ -6,8 +6,8 @@ const router = express.Router();
 // ── FatSecret helpers ────────────────────────────────────────────────────────
 const FS_TOKEN_URL     = 'https://oauth.fatsecret.com/connect/token';
 const FS_API_URL       = 'https://platform.fatsecret.com/rest/server.api';
-const FS_CLIENT_ID     = process.env.FS_CLIENT_ID     || '197ebdcdca80403ebf89af543ac75dae';
-const FS_CLIENT_SECRET = process.env.FS_CLIENT_SECRET || 'd7c83897f7e94d9a9b41361ad760484a';
+const FS_CLIENT_ID     = process.env.FS_CLIENT_ID;
+const FS_CLIENT_SECRET = process.env.FS_CLIENT_SECRET;
 
 let fsToken       = null;
 let fsTokenExpiry = 0;

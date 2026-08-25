@@ -9,7 +9,7 @@ import Exercise from './schemaForExercsise/exerciseSchema.js'
 import PoseConfig from './schemaForExercsise/PoseConfigSchema.js'
 
 // MongoDB Connection URI (Replace with your actual database connection string)
-const MONGO_URI = "mongodb://127.0.0.1:27017/fittrack";
+const MONGO_URI = "mongodb+srv://rajatchhaparwal12_db_user:h8bHaZPwB4KsXtXA@cluster0.vof7frm.mongodb.net/alltrack?retryWrites=true&w=majority";
 
 // 1. Define Master Exercise Raw Data
 const sampleExerciseData = {
@@ -106,7 +106,7 @@ const samplePoseConfigDataFactory = (exerciseObjectId) => ({
 const seedDatabase = async () => {
   try {
     console.log("Connecting to MongoDB...");
-    await mongoose.connect('mongodb://127.0.0.1:27017/FitTrackApp');
+    await mongoose.connect(MONGO_URI);
     console.log("Database connected successfully.");
 
     // Optional: Wipe old data to avoid unique duplicate key index errors during development tests

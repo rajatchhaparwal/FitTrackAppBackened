@@ -262,8 +262,10 @@ const mapDifficulty = (diff) => {
 
 async function seed() {
   try {
-    await mongoose.connect('mongodb://127.0.0.1:27017/FitTrackApp');
-    console.log("Connected to MongoDB at 127.0.0.1:27017");
+    const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/FitTrackApp';
+    console.log(`Connecting to MongoDB at: ${mongoUri.replace(/:([^:@]+)@/, ':****@')}`);
+    await mongoose.connect(mongoUri);
+    console.log("Connected to MongoDB successfully");
 
     // Load exercises from exercises.json
     const jsonPath = path.join(__dirname, '../Exercisedata/exercises.json');
