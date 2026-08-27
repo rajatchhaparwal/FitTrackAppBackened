@@ -11,7 +11,7 @@ import  AppUser  from '../Models/UserSchemaModel.js';
 const router = express.Router();
 
 // ── Gemini setup ───────────────────────────────────────────────────────────
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 // ── Multer setup (unchanged) ─────────────────────────────────────────────
 const storage = multer.diskStorage({
