@@ -13,6 +13,7 @@ import multer from 'multer';
 import foodRecommendationRouter, { buildAndSaveMealPlan } from './Api/FoodRecommendation.js';
 import workoutRoutes from './Api/WorkoutRoutes.js';
 import exerciseRoutes from './Api/ExerciseData.js';
+import { checkAndResetStreak } from './config/streakHelper.js';
 
 import firebaseAdmin from 'firebase-admin';
 import { createRequire } from 'module';
@@ -138,6 +139,12 @@ onboardingData.personalPlan = {
       }
     );
 
+    // Reset streak if the user missed their workouts
+    const wasReset = checkAndResetStreak(user);
+    if (wasReset) {
+      await user.save();
+    }
+
     res.status(200).json({ 
       message: "User synced successfully!", 
       user 
@@ -171,6 +178,12 @@ app.get('/Home', async (req,res)=>{
 if (!user) {
       return res.status(404).json({ message: "User profile not found in database." });
     }
+
+  // Reset streak if the user missed their workouts
+  const wasReset = checkAndResetStreak(user);
+  if (wasReset) {
+    await user.save();
+  }
 
   res.status(200).json({
       message: "Data fetched successfully",

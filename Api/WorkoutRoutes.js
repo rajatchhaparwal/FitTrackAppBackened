@@ -3,6 +3,7 @@ import { WorkoutTemplate } from '../Models/WorkoutTemplateSchema.js';
 import Exercise from '../Exercisedata/schemaForExercsise/exerciseSchema.js';
 import User from '../Models/UserSchemaModel.js';
 import mongoose from 'mongoose';
+import { updateStreakOnWorkout } from '../config/streakHelper.js';
 
 // Ensure WorkoutLog is loaded or define a minimalistic one if already in Models/WorkoutLog.js
 import '../Models/WorkoutLog.js';
@@ -88,8 +89,10 @@ router.post('/log', async (req, res) => {
     user.stats.total_workouts = (user.stats.total_workouts || 0) + 1;
     user.stats.total_calories_burned = (user.stats.total_calories_burned || 0) + (req.body.caloriesBurned || 0);
     user.stats.total_workout_minutes = (user.stats.total_workout_minutes || 0) + (req.body.durationMins || 0);
-    user.stats.current_streak_days = (user.stats.current_streak_days || 0) + 1;
-    user.stats.last_workout_date = new Date();
+    
+    // Update streak based on consecutive days
+    updateStreakOnWorkout(user);
+    
     await user.save();
 
     res.json({ success: true, stats: user.stats });
